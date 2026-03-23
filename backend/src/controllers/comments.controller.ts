@@ -8,6 +8,7 @@ import {
   deleteComment,
 } from '../models/comment.model';
 import { getTicketById } from '../models/ticket.model';
+import { UserRole } from '../enums';
 
 function ticketId(req: Request): number {
   return parseInt(req.params['ticketId'] ?? '0', 10);
@@ -22,8 +23,8 @@ function hasTicketAccess(req: Request, tId: number): boolean {
   if (!req.user) return false;
   const ticket = getTicketById(tId);
   if (!ticket) return false;
-  if (req.user.role === 'EMPLOYEE' && ticket.created_by !== req.user.userId) return false;
-  if (req.user.role === 'MANAGER' && ticket.department !== req.user.department) return false;
+  if (req.user.role === UserRole.EMPLOYEE && ticket.created_by !== req.user.userId) return false;
+  if (req.user.role === UserRole.MANAGER && ticket.department !== req.user.department) return false;
   return true;
 }
 
@@ -71,7 +72,7 @@ export function editComment(req: Request, res: Response): void {
 
   // Only owner or ADMIN can edit
   const isOwner = comment.user_id === req.user.userId;
-  const isAdmin = req.user.role === 'ADMIN';
+  const isAdmin = req.user.role === UserRole.ADMIN;
   if (!isOwner && !isAdmin) {
     res.status(403).json({ success: false, error: 'You can only edit your own comments' }); return;
   }
@@ -90,7 +91,7 @@ export function removeComment(req: Request, res: Response): void {
 
   // Owner, MANAGER, or ADMIN can delete
   const isOwner = comment.user_id === req.user.userId;
-  const isManagerOrAdmin = req.user.role === 'MANAGER' || req.user.role === 'ADMIN';
+  const isManagerOrAdmin = req.user.role === UserRole.MANAGER || req.user.role === UserRole.ADMIN;
   if (!isOwner && !isManagerOrAdmin) {
     res.status(403).json({ success: false, error: 'Insufficient permissions to delete this comment' }); return;
   }

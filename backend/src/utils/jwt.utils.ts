@@ -1,9 +1,10 @@
 import jwt from 'jsonwebtoken';
+import { UserRole } from '../enums';
 
 export interface JwtPayload {
   userId: number;
   email: string;
-  role: string;
+  role: UserRole;
   department: string;
   iat?: number;
   exp?: number;

@@ -5,9 +5,9 @@ interface RoleBadgeProps {
 }
 
 const roleColors: Record<UserRole, string> = {
-  EMPLOYEE: 'bg-green-100 text-green-800',
-  MANAGER: 'bg-blue-100 text-blue-800',
-  ADMIN: 'bg-red-100 text-red-800',
+  [UserRole.EMPLOYEE]: 'bg-green-100 text-green-800',
+  [UserRole.MANAGER]: 'bg-blue-100 text-blue-800',
+  [UserRole.ADMIN]: 'bg-red-100 text-red-800',
 };
 
 export function RoleBadge({ role }: RoleBadgeProps): JSX.Element {

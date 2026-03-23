@@ -1,6 +1,36 @@
-export type UserRole = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
-export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
-export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export enum UserRole {
+  EMPLOYEE = 'EMPLOYEE',
+  MANAGER = 'MANAGER',
+  ADMIN = 'ADMIN',
+}
+
+export enum TicketStatus {
+  OPEN = 'OPEN',
+  IN_PROGRESS = 'IN_PROGRESS',
+  RESOLVED = 'RESOLVED',
+  CLOSED = 'CLOSED',
+}
+
+export enum TicketPriority {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  CRITICAL = 'CRITICAL',
+}
+
+export enum TicketCategory {
+  TECHNICAL_ISSUE = 'Technical Issue',
+  ACCESS_REQUEST = 'Access Request',
+  HARDWARE = 'Hardware',
+  SOFTWARE = 'Software',
+  HR_REQUEST = 'HR Request',
+  OTHER = 'Other',
+}
+
+export enum Department {
+  IT = 'IT',
+  HR = 'HR',
+}
 
 export interface User {
   id: number;
@@ -45,6 +75,7 @@ export interface ApiResponse<T = unknown> {
 export interface LoginResponse {
   accessToken: string;
   user: User;
+  csrfToken: string;
 }
 
 export interface TicketComment {

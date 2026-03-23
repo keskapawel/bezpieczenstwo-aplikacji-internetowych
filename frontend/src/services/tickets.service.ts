@@ -15,15 +15,20 @@ export interface UpdateTicketData {
   assigned_to?: number | null;
 }
 
-interface TicketsListResponse {
+export interface TicketsListResponse {
   tickets: Ticket[];
   total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 interface TicketFilters {
   status?: string;
   priority?: string;
   department?: string;
+  page?: number;
+  limit?: number;
 }
 
 export const ticketsService = {
@@ -32,6 +37,8 @@ export const ticketsService = {
     if (filters?.status) params.append('status', filters.status);
     if (filters?.priority) params.append('priority', filters.priority);
     if (filters?.department) params.append('department', filters.department);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
     const query = params.toString();
     const url = query ? `/api/tickets?${query}` : '/api/tickets';
     const response = await api.get<ApiResponse<TicketsListResponse>>(url);

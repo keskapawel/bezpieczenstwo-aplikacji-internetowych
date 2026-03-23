@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
+import { userApiRateLimiter } from '../middleware/rateLimiter.middleware';
+import { UserRole, TicketStatus, TicketPriority } from '../enums';
 import {
   getTickets,
   getTicketByIdHandler,
@@ -14,7 +16,7 @@ import commentsRouter from './comments.routes';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authenticateToken, userApiRateLimiter);
 
 router.get('/stats', getTicketStatsHandler);
 
@@ -25,7 +27,7 @@ router.post(
   [
     body('title').notEmpty().isString().trim(),
     body('description').notEmpty().isString().trim(),
-    body('priority').isIn(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+    body('priority').isIn(Object.values(TicketPriority)),
     body('category').notEmpty().isString().trim(),
   ],
   createTicketHandler
@@ -37,7 +39,7 @@ router.patch(
   '/:id',
   [
     param('id').isInt(),
-    body('status').optional().isIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']),
+    body('status').optional().isIn(Object.values(TicketStatus)),
     body('title').optional().isString().trim(),
     body('description').optional().isString().trim(),
     body('assigned_to').optional().isInt(),
@@ -45,7 +47,7 @@ router.patch(
   updateTicketHandler
 );
 
-router.delete('/:id', requireRole('ADMIN'), param('id').isInt(), deleteTicketHandler);
+router.delete('/:id', requireRole(UserRole.ADMIN), param('id').isInt(), deleteTicketHandler);
 
 // Nested comments under /:ticketId/comments
 router.use('/:ticketId/comments', commentsRouter);

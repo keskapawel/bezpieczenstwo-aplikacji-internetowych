@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
 import { getAllUsers, updateUserRole } from '../models/user.model';
+import { SecurityAction } from '../enums';
 import db from '../database';
 
 interface SecurityLog {
@@ -36,7 +37,7 @@ export function updateUserRoleHandler(req: Request, res: Response): void {
   const userAgent = req.headers['user-agent'] ?? 'unknown';
   db.prepare(
     'INSERT INTO security_logs (user_id, action, ip_address, user_agent, success) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.user.userId, `ROLE_CHANGED: userId=${targetId} to ${role}`, ip, userAgent, 1);
+  ).run(req.user.userId, `${SecurityAction.ROLE_CHANGED}: userId=${targetId} to ${role}`, ip, userAgent, 1);
 
   res.status(200).json({ success: true, data: { message: 'Role updated successfully' } });
 }

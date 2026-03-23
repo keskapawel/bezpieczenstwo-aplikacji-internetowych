@@ -10,7 +10,9 @@ import {
   deleteTicket,
   getTicketStats,
   Ticket,
+  TicketFilters,
 } from '../models/ticket.model';
+import { UserRole, TicketStatus, TicketPriority, SecurityAction } from '../enums';
 import db from '../database';
 
 function logEvent(userId: number | null, action: string, req: Request, success: boolean): void {
@@ -24,28 +26,35 @@ function logEvent(userId: number | null, action: string, req: Request, success: 
 export function getTickets(req: Request, res: Response): void {
   if (!req.user) { res.status(401).json({ success: false, error: 'Not authenticated' }); return; }
 
-  let tickets: Ticket[];
   const { role } = req.user;
-
-  if (role === 'EMPLOYEE') {
-    tickets = getTicketsByUser(req.user.userId);
-  } else if (role === 'MANAGER') {
-    tickets = getTicketsByDepartment(req.user.department);
-  } else {
-    tickets = getAllTickets();
-  }
-
-  const { status, priority, department } = req.query as {
+  const { status, priority, department, page: pageStr, limit: limitStr } = req.query as {
     status?: string;
     priority?: string;
     department?: string;
+    page?: string;
+    limit?: string;
   };
 
-  if (status) tickets = tickets.filter((t) => t.status === status);
-  if (priority) tickets = tickets.filter((t) => t.priority === priority);
-  if (department && role === 'ADMIN') tickets = tickets.filter((t) => t.department === department);
+  const page = Math.max(1, parseInt(pageStr ?? '1', 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr ?? '10', 10) || 10));
 
-  res.status(200).json({ success: true, data: { tickets, total: tickets.length } });
+  const filters: TicketFilters = {
+    status: status || undefined,
+    priority: priority || undefined,
+    // Only ADMIN can filter by department
+    department: (role === UserRole.ADMIN && department) ? department : undefined,
+  };
+
+  let result;
+  if (role === UserRole.EMPLOYEE) {
+    result = getTicketsByUser(req.user.userId, filters, page, limit);
+  } else if (role === UserRole.MANAGER) {
+    result = getTicketsByDepartment(req.user.department, filters, page, limit);
+  } else {
+    result = getAllTickets(filters, page, limit);
+  }
+
+  res.status(200).json({ success: true, data: result });
 }
 
 export function getTicketByIdHandler(req: Request, res: Response): void {
@@ -56,7 +65,7 @@ export function getTicketByIdHandler(req: Request, res: Response): void {
 
   if (!ticket) { res.status(404).json({ success: false, error: 'Ticket not found' }); return; }
 
-  if (req.user.role === 'EMPLOYEE' && ticket.created_by !== req.user.userId) {
+  if (req.user.role === UserRole.EMPLOYEE && ticket.created_by !== req.user.userId) {
     res.status(403).json({ success: false, error: 'Access denied' });
     return;
   }
@@ -83,8 +92,8 @@ export function createTicketHandler(req: Request, res: Response): void {
   const ticket = createTicket({
     title,
     description,
-    status: 'OPEN',
-    priority: priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
+    status: TicketStatus.OPEN,
+    priority: priority as TicketPriority,
     category,
     created_by: req.user.userId,
     assigned_to: null,
@@ -116,11 +125,11 @@ export function updateTicketHandler(req: Request, res: Response): void {
 
   const updates: Partial<Pick<Ticket, 'title' | 'description' | 'status' | 'assigned_to'>> = {};
 
-  if (req.user.role === 'EMPLOYEE') {
+  if (req.user.role === UserRole.EMPLOYEE) {
     if (ticket.created_by !== req.user.userId) {
       res.status(403).json({ success: false, error: 'Access denied' }); return;
     }
-    if (ticket.status !== 'OPEN') {
+    if (ticket.status !== TicketStatus.OPEN) {
       res.status(403).json({ success: false, error: 'Can only edit OPEN tickets' }); return;
     }
     if (title !== undefined) updates.title = title;
@@ -128,7 +137,7 @@ export function updateTicketHandler(req: Request, res: Response): void {
   } else {
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
-    if (status !== undefined) updates.status = status as Ticket['status'];
+    if (status !== undefined) updates.status = status as TicketStatus;
     if (assigned_to !== undefined) updates.assigned_to = assigned_to;
   }
 
@@ -144,7 +153,7 @@ export function deleteTicketHandler(req: Request, res: Response): void {
   if (!ticket) { res.status(404).json({ success: false, error: 'Ticket not found' }); return; }
 
   deleteTicket(id);
-  logEvent(req.user.userId, `TICKET_DELETED: id=${id}`, req, true);
+  logEvent(req.user.userId, `${SecurityAction.TICKET_DELETED}: id=${id}`, req, true);
   res.status(200).json({ success: true, data: { message: 'Ticket deleted' } });
 }
 

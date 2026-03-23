@@ -22,3 +22,17 @@ export const apiRateLimiter: RequestHandler = process.env['NODE_ENV'] === 'test'
       standardHeaders: true,
       legacyHeaders: false,
     });
+
+// Per-user rate limiter — runs after authenticateToken so req.user is available.
+// Falls back to IP for unauthenticated requests that slip through.
+export const userApiRateLimiter: RequestHandler = process.env['NODE_ENV'] === 'test'
+  ? noopMiddleware
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 200,
+      keyGenerator: (req: Request): string =>
+        req.user?.userId?.toString() ?? req.ip ?? 'unknown',
+      message: { success: false, error: 'Too many requests for this account, please try again after 15 minutes' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });

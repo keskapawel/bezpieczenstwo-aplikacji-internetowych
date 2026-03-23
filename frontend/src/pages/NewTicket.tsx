@@ -2,24 +2,18 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ticketsService, CreateTicketData } from '../services/tickets.service';
 import { Navbar } from '../components/Navbar';
+import { TicketPriority, TicketCategory } from '../types';
 
-const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
-const CATEGORIES = [
-  'Technical Issue',
-  'Access Request',
-  'Hardware',
-  'Software',
-  'HR Request',
-  'Other',
-];
+const PRIORITIES = Object.values(TicketPriority);
+const CATEGORIES = Object.values(TicketCategory);
 
 export function NewTicket(): JSX.Element {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<CreateTicketData>({
     title: '',
     description: '',
-    priority: 'MEDIUM',
-    category: 'Technical Issue',
+    priority: TicketPriority.MEDIUM,
+    category: TicketCategory.TECHNICAL_ISSUE,
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

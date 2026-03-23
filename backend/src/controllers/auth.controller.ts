@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { validationResult } from 'express-validator';
-import { findUserByEmail, sanitizeUser } from '../models/user.model';
+import { findUserByEmail, findUserById, sanitizeUser } from '../models/user.model';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.utils';
 import { generateCaptcha, validateCaptcha } from '../utils/captcha.utils';
+import { SecurityAction } from '../enums';
 import db from '../database';
 
 const COOKIE_OPTIONS = {
@@ -11,6 +13,14 @@ const COOKIE_OPTIONS = {
   sameSite: 'strict' as const,
   maxAge: 7 * 24 * 60 * 60 * 1000,
   path: '/api/auth',
+};
+
+// Non-httpOnly so the frontend JavaScript can read and echo it as X-CSRF-Token header.
+const CSRF_COOKIE_OPTIONS = {
+  httpOnly: false,
+  sameSite: 'strict' as const,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/',
 };
 
 const LOCK_THRESHOLD = 5;       // lock after this many failures
@@ -119,7 +129,7 @@ export async function login(req: Request, res: Response): Promise<void> {
   const user = findUserByEmail(email);
   if (!user) {
     const newCount = incrementAttempts(email);
-    logSecurityEvent(null, 'LOGIN_FAILED', req, false);
+    logSecurityEvent(null, SecurityAction.LOGIN_FAILED, req, false);
     const failRes: Record<string, unknown> = { success: false, error: 'Invalid credentials' };
     if (newCount >= CAPTCHA_THRESHOLD && newCount < LOCK_THRESHOLD) {
       const challenge = generateCaptcha();
@@ -139,7 +149,7 @@ export async function login(req: Request, res: Response): Promise<void> {
   const passwordMatch = await bcrypt.compare(password, user.password_hash);
   if (!passwordMatch) {
     const newCount = incrementAttempts(user.id ? email : email);
-    logSecurityEvent(user.id, 'LOGIN_FAILED', req, false);
+    logSecurityEvent(user.id, SecurityAction.LOGIN_FAILED, req, false);
     const failRes: Record<string, unknown> = { success: false, error: 'Invalid credentials' };
     if (newCount >= CAPTCHA_THRESHOLD && newCount < LOCK_THRESHOLD) {
       const challenge = generateCaptcha();
@@ -169,10 +179,12 @@ export async function login(req: Request, res: Response): Promise<void> {
     'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
   ).run(user.id, tokenHash, expiresAt);
 
-  logSecurityEvent(user.id, 'LOGIN_SUCCESS', req, true);
+  logSecurityEvent(user.id, SecurityAction.LOGIN_SUCCESS, req, true);
 
+  const csrfToken = randomUUID();
   res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
-  res.status(200).json({ success: true, data: { accessToken, user: sanitizeUser(user) } });
+  res.cookie('csrfToken', csrfToken, CSRF_COOKIE_OPTIONS);
+  res.status(200).json({ success: true, data: { accessToken, user: sanitizeUser(user), csrfToken } });
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {
@@ -201,7 +213,12 @@ export async function refresh(req: Request, res: Response): Promise<void> {
   }
 
   if (!matchedToken) {
-    res.status(401).json({ success: false, error: 'Invalid or expired refresh token' });
+    // A valid JWT was presented but its hash isn't in the DB — the token was already
+    // consumed (rotated). Treat this as a reuse attack: revoke every session for this
+    // user so an attacker who stole an old token cannot keep refreshing.
+    db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(payload.userId);
+    logSecurityEvent(payload.userId, SecurityAction.REFRESH_TOKEN_REUSE_DETECTED, req, false);
+    res.status(401).json({ success: false, error: 'Token reuse detected. All sessions revoked.' });
     return;
   }
 
@@ -223,8 +240,16 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
   ).run(payload.userId, newTokenHash, newExpiresAt);
 
+  const refreshedUser = findUserById(payload.userId);
+  if (!refreshedUser) {
+    res.status(401).json({ success: false, error: 'User not found' });
+    return;
+  }
+
+  const newCsrfToken = randomUUID();
   res.cookie('refreshToken', newRefreshToken, COOKIE_OPTIONS);
-  res.status(200).json({ success: true, data: { accessToken: newAccessToken } });
+  res.cookie('csrfToken', newCsrfToken, CSRF_COOKIE_OPTIONS);
+  res.status(200).json({ success: true, data: { accessToken: newAccessToken, user: sanitizeUser(refreshedUser), csrfToken: newCsrfToken } });
 }
 
 export async function logout(req: Request, res: Response): Promise<void> {
@@ -246,6 +271,7 @@ export async function logout(req: Request, res: Response): Promise<void> {
   }
 
   res.clearCookie('refreshToken', { path: '/api/auth' });
+  res.clearCookie('csrfToken', { path: '/' });
   res.status(200).json({ success: true, data: { message: 'Logged out successfully' } });
 }
 

@@ -4,10 +4,10 @@ import { AxiosError } from 'axios';
 import { useAuthStore } from '../store/auth.store';
 import { ticketsService } from '../services/tickets.service';
 import { commentsService } from '../services/comments.service';
-import { Ticket, TicketStatus, TicketComment } from '../types';
+import { Ticket, TicketStatus, TicketComment, UserRole } from '../types';
 import { Navbar } from '../components/Navbar';
 
-const STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+const STATUSES = Object.values(TicketStatus);
 
 // ─── Comments Section ────────────────────────────────────────────────────────
 
@@ -27,8 +27,8 @@ function CommentItem({ comment, currentUserId, currentRole, ticketId, onUpdated,
   const [error, setError] = useState<string | null>(null);
 
   const isOwner = comment.user_id === currentUserId;
-  const isAdmin = currentRole === 'ADMIN';
-  const isManagerOrAdmin = currentRole === 'MANAGER' || currentRole === 'ADMIN';
+  const isAdmin = currentRole === UserRole.ADMIN;
+  const isManagerOrAdmin = currentRole === UserRole.MANAGER || currentRole === UserRole.ADMIN;
 
   const canEdit = isOwner || isAdmin;
   const canDelete = isOwner || isManagerOrAdmin;
@@ -282,9 +282,9 @@ export function TicketDetail(): JSX.Element {
   }, [id]);
 
   const isOwner = user && ticket && ticket.created_by === user.id;
-  const canEdit = isOwner && ticket?.status === 'OPEN' && user?.role === 'EMPLOYEE';
-  const canChangeStatus = user?.role === 'MANAGER' || user?.role === 'ADMIN';
-  const canDelete = user?.role === 'ADMIN';
+  const canEdit = isOwner && ticket?.status === TicketStatus.OPEN && user?.role === UserRole.EMPLOYEE;
+  const canChangeStatus = user?.role === UserRole.MANAGER || user?.role === UserRole.ADMIN;
+  const canDelete = user?.role === UserRole.ADMIN;
 
   const handleSaveEdit = async (): Promise<void> => {
     if (!ticket) return;

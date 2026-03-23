@@ -7,25 +7,25 @@ import { TicketCard } from '../components/TicketCard';
 import { Navbar } from '../components/Navbar';
 
 const STATUS_LABELS: Record<TicketStatus, string> = {
-  OPEN: 'Open',
-  IN_PROGRESS: 'In Progress',
-  RESOLVED: 'Resolved',
-  CLOSED: 'Closed',
+  [TicketStatus.OPEN]: 'Open',
+  [TicketStatus.IN_PROGRESS]: 'In Progress',
+  [TicketStatus.RESOLVED]: 'Resolved',
+  [TicketStatus.CLOSED]: 'Closed',
 };
 
 const STATUS_COLORS: Record<TicketStatus, string> = {
-  OPEN: 'border-blue-500 bg-blue-50 text-blue-700',
-  IN_PROGRESS: 'border-yellow-500 bg-yellow-50 text-yellow-700',
-  RESOLVED: 'border-green-500 bg-green-50 text-green-700',
-  CLOSED: 'border-gray-400 bg-gray-50 text-gray-600',
+  [TicketStatus.OPEN]: 'border-blue-500 bg-blue-50 text-blue-700',
+  [TicketStatus.IN_PROGRESS]: 'border-yellow-500 bg-yellow-50 text-yellow-700',
+  [TicketStatus.RESOLVED]: 'border-green-500 bg-green-50 text-green-700',
+  [TicketStatus.CLOSED]: 'border-gray-400 bg-gray-50 text-gray-600',
 };
 
-const ALL_STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+const ALL_STATUSES = Object.values(TicketStatus);
 
 export function Dashboard(): JSX.Element {
   const { user } = useAuthStore();
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [stats, setStats] = useState<Record<string, number>>({});
+  const [stats, setStats] = useState<Partial<Record<TicketStatus, number>>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,8 +33,11 @@ export function Dashboard(): JSX.Element {
       try {
         const data = await ticketsService.getTickets();
         setTickets(data.tickets);
-        const statMap: Record<string, number> = {
-          OPEN: 0, IN_PROGRESS: 0, RESOLVED: 0, CLOSED: 0,
+        const statMap: Record<TicketStatus, number> = {
+          [TicketStatus.OPEN]: 0,
+          [TicketStatus.IN_PROGRESS]: 0,
+          [TicketStatus.RESOLVED]: 0,
+          [TicketStatus.CLOSED]: 0,
         };
         data.tickets.forEach((t) => {
           statMap[t.status] = (statMap[t.status] ?? 0) + 1;

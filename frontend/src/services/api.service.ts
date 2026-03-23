@@ -1,7 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 import { useAuthStore } from '../store/auth.store';
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = import.meta.env['VITE_API_BASE_URL'] ?? 'http://localhost:3001';
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -28,11 +29,26 @@ function processQueue(error: unknown, token: string | null): void {
   failedQueue = [];
 }
 
+function getCsrfCookie(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)csrfToken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = useAuthStore.getState().accessToken;
-    if (token && config.headers) {
-      config.headers['Authorization'] = `Bearer ${token}`;
+    const { accessToken, csrfToken } = useAuthStore.getState();
+    if (accessToken && config.headers) {
+      config.headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    // Send CSRF token for cookie-dependent auth endpoints
+    const isCookieEndpoint =
+      config.url?.includes('/auth/refresh') ||
+      config.url?.includes('/auth/logout');
+    if (isCookieEndpoint) {
+      const csrf = csrfToken ?? getCsrfCookie();
+      if (csrf && config.headers) {
+        config.headers['X-CSRF-Token'] = csrf;
+      }
     }
     return config;
   },
@@ -66,15 +82,21 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
+        const csrf = useAuthStore.getState().csrfToken ?? getCsrfCookie();
         const response = await axios.post<{
           success: boolean;
-          data?: { accessToken: string };
-        }>(`${BASE_URL}/api/auth/refresh`, {}, { withCredentials: true });
+          data?: { accessToken: string; csrfToken?: string };
+        }>(`${BASE_URL}/api/auth/refresh`, {}, {
+          withCredentials: true,
+          headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+        });
 
         const newToken = response.data.data?.accessToken;
         if (!newToken) throw new Error('No token in refresh response');
 
+        const newCsrf = response.data.data?.csrfToken;
         useAuthStore.getState().setAccessToken(newToken);
+        if (newCsrf) useAuthStore.getState().setCsrfToken(newCsrf);
         processQueue(null, newToken);
 
         if (originalRequest.headers) {
@@ -83,6 +105,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError: unknown) {
         processQueue(refreshError, null);
+        toast.error('Sesja wygasła. Zaloguj się ponownie.');
         useAuthStore.getState().logout();
         window.location.href = '/login';
         return Promise.reject(refreshError);

@@ -1,11 +1,12 @@
 import db from '../database';
+import { TicketStatus, TicketPriority } from '../enums';
 
 export interface Ticket {
   id: number;
   title: string;
   description: string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status: TicketStatus;
+  priority: TicketPriority;
   category: string;
   created_by: number;
   assigned_to: number | null;
@@ -14,20 +15,69 @@ export interface Ticket {
   updated_at: string;
 }
 
-export function getTicketsByUser(userId: number): Ticket[] {
-  return db
-    .prepare('SELECT * FROM tickets WHERE created_by = ? ORDER BY created_at DESC')
-    .all(userId) as Ticket[];
+export interface TicketFilters {
+  status?: string;
+  priority?: string;
+  department?: string;
 }
 
-export function getTicketsByDepartment(department: string): Ticket[] {
-  return db
-    .prepare('SELECT * FROM tickets WHERE department = ? ORDER BY created_at DESC')
-    .all(department) as Ticket[];
+export interface PaginatedTickets {
+  tickets: Ticket[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
-export function getAllTickets(): Ticket[] {
-  return db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all() as Ticket[];
+function buildFilterClauses(filters: TicketFilters, values: unknown[]): string {
+  const clauses: string[] = [];
+  if (filters.status) { clauses.push('status = ?'); values.push(filters.status); }
+  if (filters.priority) { clauses.push('priority = ?'); values.push(filters.priority); }
+  if (filters.department) { clauses.push('department = ?'); values.push(filters.department); }
+  return clauses.length > 0 ? ` AND ${clauses.join(' AND ')}` : '';
+}
+
+export function getTicketsByUser(userId: number, filters: TicketFilters = {}, page = 1, limit = 10): PaginatedTickets {
+  const countValues: unknown[] = [userId];
+  const filterSql = buildFilterClauses(filters, countValues);
+  const total = (db.prepare(`SELECT COUNT(*) as count FROM tickets WHERE created_by = ?${filterSql}`).get(...countValues) as { count: number }).count;
+
+  const dataValues: unknown[] = [userId];
+  buildFilterClauses(filters, dataValues);
+  const offset = (page - 1) * limit;
+  dataValues.push(limit, offset);
+  const tickets = db.prepare(`SELECT * FROM tickets WHERE created_by = ?${filterSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...dataValues) as Ticket[];
+
+  return { tickets, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export function getTicketsByDepartment(department: string, filters: TicketFilters = {}, page = 1, limit = 10): PaginatedTickets {
+  const countValues: unknown[] = [department];
+  const filterSql = buildFilterClauses(filters, countValues);
+  const total = (db.prepare(`SELECT COUNT(*) as count FROM tickets WHERE department = ?${filterSql}`).get(...countValues) as { count: number }).count;
+
+  const dataValues: unknown[] = [department];
+  buildFilterClauses(filters, dataValues);
+  const offset = (page - 1) * limit;
+  dataValues.push(limit, offset);
+  const tickets = db.prepare(`SELECT * FROM tickets WHERE department = ?${filterSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...dataValues) as Ticket[];
+
+  return { tickets, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export function getAllTickets(filters: TicketFilters = {}, page = 1, limit = 10): PaginatedTickets {
+  const countValues: unknown[] = [];
+  const filterClauses: string[] = [];
+  if (filters.status) { filterClauses.push('status = ?'); countValues.push(filters.status); }
+  if (filters.priority) { filterClauses.push('priority = ?'); countValues.push(filters.priority); }
+  if (filters.department) { filterClauses.push('department = ?'); countValues.push(filters.department); }
+  const where = filterClauses.length > 0 ? `WHERE ${filterClauses.join(' AND ')}` : '';
+
+  const total = (db.prepare(`SELECT COUNT(*) as count FROM tickets ${where}`).get(...countValues) as { count: number }).count;
+  const offset = (page - 1) * limit;
+  const tickets = db.prepare(`SELECT * FROM tickets ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...countValues, limit, offset) as Ticket[];
+
+  return { tickets, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
 export function getTicketById(id: number): Ticket | undefined {

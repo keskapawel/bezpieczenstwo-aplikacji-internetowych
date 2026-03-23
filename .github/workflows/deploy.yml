@@ -1,0 +1,101 @@
+name: CI/CD — SecureDesk
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Jeden deployment naraz — jeśli push przyszedł gdy deploy trwa, anuluj stary
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Job 1: Testy i sprawdzenie builda ────────────────────────────────────
+  ci:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      # Backend
+      - name: Install backend deps
+        run: npm ci
+        working-directory: backend
+
+      - name: Run backend tests
+        run: npm test
+        working-directory: backend
+
+      - name: Build backend (TypeScript → JS)
+        run: npm run build
+        working-directory: backend
+
+      # Frontend
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          # Podczas CI build używamy placeholdera — prawdziwy URL jest na serwerze
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || '' }}
+
+  # ─── Job 2: Deploy do Oracle Cloud VM (tylko push do main) ────────────────
+  deploy:
+    name: Deploy to Oracle Cloud
+    needs: ci
+    runs-on: ubuntu-latest
+    # Deploy tylko gdy push do main (nie PR)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          # Timeout na całe połączenie SSH
+          command_timeout: 10m
+          script: |
+            set -e  # Zatrzymaj przy pierwszym błędzie
+
+            APP_DIR=/opt/securedesk
+
+            echo "==> Pulling latest code"
+            cd $APP_DIR
+            git pull origin main
+
+            echo "==> Building backend"
+            cd $APP_DIR/backend
+            npm ci --omit=dev
+            npm run build
+
+            echo "==> Building frontend"
+            cd $APP_DIR/frontend
+            npm ci
+            # .env.production z VITE_API_BASE_URL musi być na serwerze
+            npm run build
+            sudo cp -r dist/. /var/www/securedesk/
+
+            echo "==> Restarting backend with pm2"
+            cd $APP_DIR
+            pm2 reload pm2.config.cjs --env production || pm2 start pm2.config.cjs --env production
+            pm2 save
+
+            echo "==> Done. Deployment successful."

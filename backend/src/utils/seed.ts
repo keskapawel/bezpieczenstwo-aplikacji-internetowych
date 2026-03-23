@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import db from '../database';
+import { UserRole, TicketStatus, TicketPriority, TicketCategory, Department } from '../enums';
 
 const SALT_ROUNDS = 12;
 
@@ -10,14 +11,14 @@ interface UserRow {
 
 function seedUsers(): void {
   const users = [
-    { email: 'admin@securedesk.com', password: 'Admin123!', name: 'Admin User', role: 'ADMIN', department: 'IT', is_active: 1 },
-    { email: 'manager.it@securedesk.com', password: 'Manager123!', name: 'IT Manager', role: 'MANAGER', department: 'IT', is_active: 1 },
-    { email: 'manager.hr@securedesk.com', password: 'Manager123!', name: 'HR Manager', role: 'MANAGER', department: 'HR', is_active: 1 },
-    { email: 'jan.kowalski@securedesk.com', password: 'Employee123!', name: 'Jan Kowalski', role: 'EMPLOYEE', department: 'IT', is_active: 1 },
-    { email: 'anna.nowak@securedesk.com', password: 'Employee123!', name: 'Anna Nowak', role: 'EMPLOYEE', department: 'IT', is_active: 1 },
-    { email: 'piotr.wisniewski@securedesk.com', password: 'Employee123!', name: 'Piotr Wiśniewski', role: 'EMPLOYEE', department: 'HR', is_active: 1 },
-    { email: 'maria.wojcik@securedesk.com', password: 'Employee123!', name: 'Maria Wójcik', role: 'EMPLOYEE', department: 'HR', is_active: 1 },
-    { email: 'test.inactive@securedesk.com', password: 'Employee123!', name: 'Test Inactive', role: 'EMPLOYEE', department: 'HR', is_active: 0 },
+    { email: 'admin@securedesk.com', password: 'Admin123!', name: 'Admin User', role: UserRole.ADMIN, department: Department.IT, is_active: 1 },
+    { email: 'manager.it@securedesk.com', password: 'Manager123!', name: 'IT Manager', role: UserRole.MANAGER, department: Department.IT, is_active: 1 },
+    { email: 'manager.hr@securedesk.com', password: 'Manager123!', name: 'HR Manager', role: UserRole.MANAGER, department: Department.HR, is_active: 1 },
+    { email: 'jan.kowalski@securedesk.com', password: 'Employee123!', name: 'Jan Kowalski', role: UserRole.EMPLOYEE, department: Department.IT, is_active: 1 },
+    { email: 'anna.nowak@securedesk.com', password: 'Employee123!', name: 'Anna Nowak', role: UserRole.EMPLOYEE, department: Department.IT, is_active: 1 },
+    { email: 'piotr.wisniewski@securedesk.com', password: 'Employee123!', name: 'Piotr Wiśniewski', role: UserRole.EMPLOYEE, department: Department.HR, is_active: 1 },
+    { email: 'maria.wojcik@securedesk.com', password: 'Employee123!', name: 'Maria Wójcik', role: UserRole.EMPLOYEE, department: Department.HR, is_active: 1 },
+    { email: 'test.inactive@securedesk.com', password: 'Employee123!', name: 'Test Inactive', role: UserRole.EMPLOYEE, department: Department.HR, is_active: 0 },
   ];
 
   const insertUser = db.prepare(
@@ -57,92 +58,92 @@ function seedTickets(): void {
     {
       title: 'VPN nie działa po aktualizacji systemu',
       description: 'Po aktualizacji systemu operacyjnego VPN przestał działać. Błąd: "Connection to server failed". Próbowałem reinstalacji klienta – bez efektu.',
-      status: 'OPEN', priority: 'HIGH', category: 'Technical Issue',
-      created_by: janId, assigned_to: managerItId, department: 'IT',
+      status: TicketStatus.OPEN, priority: TicketPriority.HIGH, category: TicketCategory.TECHNICAL_ISSUE,
+      created_by: janId, assigned_to: managerItId, department: Department.IT,
     },
     {
       title: 'Prośba o dostęp do systemu HR',
       description: 'W związku z nowym projektem potrzebuję dostępu do modułu raportowania w systemie HR. Proszę o przyznanie uprawnień read-only.',
-      status: 'IN_PROGRESS', priority: 'MEDIUM', category: 'Access Request',
-      created_by: annaId, assigned_to: adminId, department: 'IT',
+      status: TicketStatus.IN_PROGRESS, priority: TicketPriority.MEDIUM, category: TicketCategory.ACCESS_REQUEST,
+      created_by: annaId, assigned_to: adminId, department: Department.IT,
     },
     {
       title: 'Awaria drukarki w sali konferencyjnej B204',
       description: 'Drukarka HP LaserJet na 2. piętrze (sala B204) nie drukuje. Wyświetla błąd "Paper Jam" mimo że papier jest prawidłowo załadowany.',
-      status: 'RESOLVED', priority: 'LOW', category: 'Hardware',
-      created_by: janId, assigned_to: null, department: 'IT',
+      status: TicketStatus.RESOLVED, priority: TicketPriority.LOW, category: TicketCategory.HARDWARE,
+      created_by: janId, assigned_to: null, department: Department.IT,
     },
     {
       title: 'Instalacja oprogramowania AutoCAD 2024',
       description: 'Proszę o instalację AutoCAD 2024 na stacji roboczej. Licencja jest dostępna w puli firmowej. Potrzebuję do nowego projektu architektonicznego.',
-      status: 'CLOSED', priority: 'MEDIUM', category: 'Software',
-      created_by: annaId, assigned_to: managerItId, department: 'IT',
+      status: TicketStatus.CLOSED, priority: TicketPriority.MEDIUM, category: TicketCategory.SOFTWARE,
+      created_by: annaId, assigned_to: managerItId, department: Department.IT,
     },
     {
       title: 'KRYTYCZNY: Serwer produkcyjny niedostępny',
       description: 'Serwer główny prod-01 jest niedostępny od 08:00. Wszystkie usługi są wstrzymane. Błąd: "Connection refused" na porcie 443. Potrzebna natychmiastowa interwencja!',
-      status: 'RESOLVED', priority: 'CRITICAL', category: 'Technical Issue',
-      created_by: managerItId, assigned_to: adminId, department: 'IT',
+      status: TicketStatus.RESOLVED, priority: TicketPriority.CRITICAL, category: TicketCategory.TECHNICAL_ISSUE,
+      created_by: managerItId, assigned_to: adminId, department: Department.IT,
     },
     {
       title: 'Problem z logowaniem do poczty firmowej',
       description: 'Po resecie hasła przez dział IT nie mogę zalogować się do poczty Outlook. Hasło było zmienione wczoraj, ale logowanie nadal nie działa.',
-      status: 'OPEN', priority: 'HIGH', category: 'Technical Issue',
-      created_by: janId, assigned_to: null, department: 'IT',
+      status: TicketStatus.OPEN, priority: TicketPriority.HIGH, category: TicketCategory.TECHNICAL_ISSUE,
+      created_by: janId, assigned_to: null, department: Department.IT,
     },
     {
       title: 'Aktualizacja polityki urlopowej Q2 2026',
       description: 'Proszę o aktualizację dokumentu "Polityka Urlopowa" zgodnie z nowym regulaminem pracy obowiązującym od 1 kwietnia 2026. Zmiany dotyczą urlopów na żądanie.',
-      status: 'IN_PROGRESS', priority: 'MEDIUM', category: 'HR Request',
-      created_by: piotrId, assigned_to: managerHrId, department: 'HR',
+      status: TicketStatus.IN_PROGRESS, priority: TicketPriority.MEDIUM, category: TicketCategory.HR_REQUEST,
+      created_by: piotrId, assigned_to: managerHrId, department: Department.HR,
     },
     {
       title: 'Onboarding nowego pracownika - Tomasz Zielony',
       description: 'Proszę o przygotowanie stanowiska pracy i dostępów systemowych dla nowego pracownika Tomasza Zielonego. Start pracy: 01.04.2026, dział Marketing.',
-      status: 'OPEN', priority: 'HIGH', category: 'HR Request',
-      created_by: mariaId, assigned_to: null, department: 'HR',
+      status: TicketStatus.OPEN, priority: TicketPriority.HIGH, category: TicketCategory.HR_REQUEST,
+      created_by: mariaId, assigned_to: null, department: Department.HR,
     },
     {
       title: 'Błąd w naliczaniu nadgodzin w systemie payroll',
       description: 'System kadrowy Sage HR pokazuje błędne stawki dla pracowników z nadgodzinami. Stawka powinna wynosić 150%, a nalicza 100%. Dotyczy 12 pracowników za marzec.',
-      status: 'IN_PROGRESS', priority: 'CRITICAL', category: 'Software',
-      created_by: mariaId, assigned_to: adminId, department: 'HR',
+      status: TicketStatus.IN_PROGRESS, priority: TicketPriority.CRITICAL, category: TicketCategory.SOFTWARE,
+      created_by: mariaId, assigned_to: adminId, department: Department.HR,
     },
     {
       title: 'Zaświadczenie o zatrudnieniu dla banku',
       description: 'Potrzebuję zaświadczenia o zatrudnieniu i dochodach do banku PKO BP w związku z wnioskiem o kredyt. Termin złożenia dokumentów: piątek 28.03.2026.',
-      status: 'RESOLVED', priority: 'HIGH', category: 'HR Request',
-      created_by: piotrId, assigned_to: managerHrId, department: 'HR',
+      status: TicketStatus.RESOLVED, priority: TicketPriority.HIGH, category: TicketCategory.HR_REQUEST,
+      created_by: piotrId, assigned_to: managerHrId, department: Department.HR,
     },
     {
       title: 'Wymiana uszkodzonej klawiatury i myszy',
       description: 'Klawiatura Logitech - uszkodzone klawisze F5, F6 i Backspace. Mysz bezprzewodowa nie reaguje mimo wymiany baterii. Proszę o wymianę sprzętu.',
-      status: 'CLOSED', priority: 'LOW', category: 'Hardware',
-      created_by: annaId, assigned_to: null, department: 'IT',
+      status: TicketStatus.CLOSED, priority: TicketPriority.LOW, category: TicketCategory.HARDWARE,
+      created_by: annaId, assigned_to: null, department: Department.IT,
     },
     {
       title: 'Konfiguracja uwierzytelniania dwuskładnikowego (2FA)',
       description: 'Proszę o pomoc w konfiguracji 2FA dla konta firmowego. Aplikacja Microsoft Authenticator jest zainstalowana, ale kod weryfikacyjny nie jest akceptowany.',
-      status: 'OPEN', priority: 'MEDIUM', category: 'Access Request',
-      created_by: piotrId, assigned_to: null, department: 'HR',
+      status: TicketStatus.OPEN, priority: TicketPriority.MEDIUM, category: TicketCategory.ACCESS_REQUEST,
+      created_by: piotrId, assigned_to: null, department: Department.HR,
     },
     {
       title: 'Weryfikacja backup danych z 20.03.2026',
       description: 'Proszę o potwierdzenie, czy backup serwerów z dnia 20.03.2026 zakończył się pomyślnie. Potrzebujemy dokumentacji do audytu ISO 27001 zaplanowanego na 25.03.',
-      status: 'RESOLVED', priority: 'HIGH', category: 'Technical Issue',
-      created_by: managerItId, assigned_to: adminId, department: 'IT',
+      status: TicketStatus.RESOLVED, priority: TicketPriority.HIGH, category: TicketCategory.TECHNICAL_ISSUE,
+      created_by: managerItId, assigned_to: adminId, department: Department.IT,
     },
     {
       title: 'Wolne działanie modułu raportowania ERP',
       description: 'Od tygodnia system ERP (SAP S/4HANA) działa bardzo wolno, szczególnie moduł raportowania finansowego. Generowanie raportu miesięcznego zajmuje 45 min zamiast 5.',
-      status: 'IN_PROGRESS', priority: 'HIGH', category: 'Software',
-      created_by: mariaId, assigned_to: managerItId, department: 'HR',
+      status: TicketStatus.IN_PROGRESS, priority: TicketPriority.HIGH, category: TicketCategory.SOFTWARE,
+      created_by: mariaId, assigned_to: managerItId, department: Department.HR,
     },
     {
       title: 'Organizacja szkolenia z cyberbezpieczeństwa',
       description: 'Czy planowane jest szkolenie z cyberbezpieczeństwa dla działu HR w Q2 2026? Wiele osób w dziale klikało podejrzane linki. Potrzebne szkolenie awareness.',
-      status: 'OPEN', priority: 'LOW', category: 'HR Request',
-      created_by: mariaId, assigned_to: null, department: 'HR',
+      status: TicketStatus.OPEN, priority: TicketPriority.LOW, category: TicketCategory.HR_REQUEST,
+      created_by: mariaId, assigned_to: null, department: Department.HR,
     },
   ];
 

@@ -4,7 +4,7 @@ import { User, SecurityLog, UserRole, ApiResponse } from '../types';
 import { Navbar } from '../components/Navbar';
 import { RoleBadge } from '../components/RoleBadge';
 
-const ROLES: UserRole[] = ['EMPLOYEE', 'MANAGER', 'ADMIN'];
+const ROLES = Object.values(UserRole);
 
 interface UsersResponse {
   users: User[];

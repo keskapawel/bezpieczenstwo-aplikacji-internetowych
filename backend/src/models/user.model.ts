@@ -1,11 +1,12 @@
 import db from '../database';
+import { UserRole } from '../enums';
 
 export interface User {
   id: number;
   email: string;
   password_hash: string;
   name: string;
-  role: 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
+  role: UserRole;
   department: string;
   created_at: string;
   is_active: number;

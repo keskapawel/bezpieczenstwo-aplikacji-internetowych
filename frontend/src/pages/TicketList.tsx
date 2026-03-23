@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/auth.store';
 import { ticketsService } from '../services/tickets.service';
-import { Ticket, TicketStatus, TicketPriority } from '../types';
+import { Ticket, TicketStatus, TicketPriority, UserRole, Department } from '../types';
 import { Navbar } from '../components/Navbar';
 import { TicketCard } from '../components/TicketCard';
 
-const STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
-const PRIORITIES: TicketPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-const DEPARTMENTS = ['IT', 'HR'];
+const STATUSES = Object.values(TicketStatus);
+const PRIORITIES = Object.values(TicketPriority);
+const DEPARTMENTS = Object.values(Department);
 const PAGE_SIZE = 10;
 
 export function TicketList(): JSX.Element {
   const { user } = useAuthStore();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
@@ -28,21 +30,29 @@ export function TicketList(): JSX.Element {
           status: filterStatus || undefined,
           priority: filterPriority || undefined,
           department: filterDepartment || undefined,
+          page,
+          limit: PAGE_SIZE,
         });
         setTickets(data.tickets);
-        setPage(1);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
       } catch {
         setTickets([]);
+        setTotal(0);
+        setTotalPages(1);
       } finally {
         setLoading(false);
       }
     };
     void load();
-  }, [filterStatus, filterPriority, filterDepartment]);
+  }, [filterStatus, filterPriority, filterDepartment, page]);
 
-  const totalPages = Math.ceil(tickets.length / PAGE_SIZE);
-  const paginated = tickets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const canShowDeptFilter = user?.role === 'MANAGER' || user?.role === 'ADMIN';
+  const handleFilterChange = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setter(e.target.value);
+    setPage(1);
+  };
+
+  const canShowDeptFilter = user?.role === UserRole.MANAGER || user?.role === UserRole.ADMIN;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -51,7 +61,7 @@ export function TicketList(): JSX.Element {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Tickets</h1>
-            <p className="text-gray-400 text-sm mt-0.5">{tickets.length} tickets</p>
+            <p className="text-gray-400 text-sm mt-0.5">{total} tickets</p>
           </div>
           <Link
             to="/tickets/new"
@@ -64,7 +74,7 @@ export function TicketList(): JSX.Element {
         <div className="flex flex-wrap gap-3 mb-6">
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
+            onChange={handleFilterChange(setFilterStatus)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Statuses</option>
@@ -75,7 +85,7 @@ export function TicketList(): JSX.Element {
 
           <select
             value={filterPriority}
-            onChange={(e) => setFilterPriority(e.target.value)}
+            onChange={handleFilterChange(setFilterPriority)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Priorities</option>
@@ -87,7 +97,7 @@ export function TicketList(): JSX.Element {
           {canShowDeptFilter && (
             <select
               value={filterDepartment}
-              onChange={(e) => setFilterDepartment(e.target.value)}
+              onChange={handleFilterChange(setFilterDepartment)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Departments</option>
@@ -99,7 +109,7 @@ export function TicketList(): JSX.Element {
 
           {(filterStatus || filterPriority || filterDepartment) && (
             <button
-              onClick={() => { setFilterStatus(''); setFilterPriority(''); setFilterDepartment(''); }}
+              onClick={() => { setFilterStatus(''); setFilterPriority(''); setFilterDepartment(''); setPage(1); }}
               className="text-sm text-gray-500 hover:text-gray-700 underline"
             >
               Clear filters
@@ -109,7 +119,7 @@ export function TicketList(): JSX.Element {
 
         {loading ? (
           <div className="text-center py-16 text-gray-400">Loading tickets...</div>
-        ) : paginated.length === 0 ? (
+        ) : tickets.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-3xl mb-2">🔍</div>
             No tickets found.
@@ -117,7 +127,7 @@ export function TicketList(): JSX.Element {
         ) : (
           <>
             <div className="space-y-3 mb-6">
-              {paginated.map((ticket) => (
+              {tickets.map((ticket) => (
                 <TicketCard key={ticket.id} ticket={ticket} />
               ))}
             </div>

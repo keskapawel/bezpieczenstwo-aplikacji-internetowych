@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { AxiosError } from 'axios';
 import { authService } from '../services/auth.service';
 import { useAuthStore } from '../store/auth.store';
+import { UserRole } from '../types';
 
 interface ApiErrorData {
   error?: string;
@@ -28,7 +29,7 @@ export function Login(): JSX.Element {
 
   useEffect(() => {
     if (user) {
-      navigate(user.role === 'ADMIN' ? '/admin' : '/dashboard');
+      navigate(user.role === UserRole.ADMIN ? '/admin' : '/dashboard');
     }
   }, [user, navigate]);
 
@@ -43,8 +44,8 @@ export function Login(): JSX.Element {
       setCaptchaToken('');
       setCaptchaQuestion('');
       setCaptchaAnswer('');
-      login(data.accessToken, data.user);
-      navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
+      login(data.accessToken, data.user, data.csrfToken);
+      navigate(data.user.role === UserRole.ADMIN ? '/admin' : '/dashboard');
     } catch (err: unknown) {
       if (err instanceof AxiosError) {
         const status = err.response?.status;
