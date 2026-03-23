@@ -2,6 +2,16 @@ import request from 'supertest';
 import app from '../app';
 import { seedTestDb } from './helpers/db';
 
+/** Złożenie nagłówka Cookie z wielu Set-Cookie (pierwszy segment name=value). */
+function cookieHeaderFromLogin(res: request.Response): string {
+  const raw = res.headers['set-cookie'] as string[] | string | undefined;
+  const lines = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return lines
+    .map((line) => line.split(';')[0]?.trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
 beforeAll(async () => {
   await seedTestDb();
 });
@@ -70,21 +80,22 @@ describe('POST /api/auth/login', () => {
 });
 
 describe('POST /api/auth/refresh', () => {
-  let refreshCookie: string;
+  let cookieHeader: string;
+  let csrfToken: string;
 
   beforeAll(async () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: 'manager@test.com', password: 'Manager123' });
-    const raw = res.headers['set-cookie'] as string[] | string | undefined;
-    const cookies = Array.isArray(raw) ? raw : [raw ?? ''];
-    refreshCookie = cookies.find(c => c.startsWith('refreshToken=')) ?? '';
+    cookieHeader = cookieHeaderFromLogin(res);
+    csrfToken = res.body.data.csrfToken as string;
   });
 
   it('returns 200 with valid refresh cookie', async () => {
     const res = await request(app)
       .post('/api/auth/refresh')
-      .set('Cookie', refreshCookie);
+      .set('Cookie', cookieHeader)
+      .set('X-CSRF-Token', csrfToken);
     expect(res.status).toBe(200);
   });
 
@@ -92,25 +103,33 @@ describe('POST /api/auth/refresh', () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
       .send({ email: 'employee1@test.com', password: 'Employee123' });
-    const raw = loginRes.headers['set-cookie'] as string[] | string | undefined;
-    const cookies = Array.isArray(raw) ? raw : [raw ?? ''];
-    const cookie = cookies.find(c => c.startsWith('refreshToken=')) ?? '';
+    const cookies = cookieHeaderFromLogin(loginRes);
+    const token = loginRes.body.data.csrfToken as string;
 
     const res = await request(app)
       .post('/api/auth/refresh')
-      .set('Cookie', cookie);
+      .set('Cookie', cookies)
+      .set('X-CSRF-Token', token);
     expect(res.body.data.accessToken).toBeDefined();
   });
 
-  it('returns 401 without refresh cookie', async () => {
-    const res = await request(app).post('/api/auth/refresh');
+  it('returns 401 without refresh cookie (CSRF OK)', async () => {
+    const csrf = 'test-csrf-no-refresh';
+    const res = await request(app)
+      .post('/api/auth/refresh')
+      .set('Cookie', `csrfToken=${csrf}`)
+      .set('X-CSRF-Token', csrf);
     expect(res.status).toBe(401);
   });
 });
 
 describe('POST /api/auth/logout', () => {
   it('returns 200', async () => {
-    const res = await request(app).post('/api/auth/logout');
+    const csrf = 'test-csrf-logout';
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', `csrfToken=${csrf}`)
+      .set('X-CSRF-Token', csrf);
     expect(res.status).toBe(200);
   });
 });

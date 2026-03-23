@@ -5,8 +5,14 @@ import {
   verifyAccessToken,
   verifyRefreshToken,
 } from '../utils/jwt.utils';
+import { UserRole } from '../enums';
 
-const payload = { userId: 1, email: 'test@test.com', role: 'EMPLOYEE', department: 'IT' };
+const payload = {
+  userId: 1,
+  email: 'test@test.com',
+  role: UserRole.EMPLOYEE,
+  department: 'IT',
+};
 
 describe('JWT utilities', () => {
   describe('generateAccessToken', () => {
