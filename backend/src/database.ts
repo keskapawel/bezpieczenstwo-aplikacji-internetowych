@@ -21,7 +21,9 @@ db.exec(`
     role TEXT NOT NULL CHECK(role IN ('EMPLOYEE', 'MANAGER', 'ADMIN')),
     department TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    is_active INTEGER NOT NULL DEFAULT 1
+    is_active INTEGER NOT NULL DEFAULT 1,
+    two_factor_secret TEXT,
+    two_factor_enabled INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS tickets (
@@ -72,6 +74,24 @@ db.exec(`
     locked_until TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS two_factor_challenges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+function ensureColumn(table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+ensureColumn('users', 'two_factor_secret', 'TEXT');
+ensureColumn('users', 'two_factor_enabled', 'INTEGER NOT NULL DEFAULT 0');
 
 export default db;

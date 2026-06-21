@@ -7,7 +7,7 @@ async function login(email: string, password: string): Promise<string> {
   return res.body.data.accessToken as string;
 }
 
-beforeAll(async () => {
+beforeEach(async () => {
   await seedTestDb();
 });
 
@@ -55,6 +55,73 @@ describe('GET /api/tickets/:id', () => {
       .get('/api/tickets/1')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
+  });
+
+  it('MANAGER can GET a ticket in their department', async () => {
+    const token = await login('manager@test.com', 'Manager123');
+    const res = await request(app)
+      .get('/api/tickets/1')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.department).toBe('IT');
+  });
+
+  it('MANAGER cannot GET a ticket from another department', async () => {
+    const token = await login('manager@test.com', 'Manager123');
+    const res = await request(app)
+      .get('/api/tickets/2')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/tickets/:id', () => {
+  it('MANAGER can update a ticket in their department', async () => {
+    const token = await login('manager@test.com', 'Manager123');
+    const res = await request(app)
+      .patch('/api/tickets/1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'IN_PROGRESS' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('IN_PROGRESS');
+  });
+
+  it('MANAGER cannot update a ticket from another department', async () => {
+    const token = await login('manager@test.com', 'Manager123');
+    const res = await request(app)
+      .patch('/api/tickets/2')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'IN_PROGRESS' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /api/tickets/stats', () => {
+  it('EMPLOYEE stats include only their own tickets', async () => {
+    const token = await login('employee1@test.com', 'Employee123');
+    const res = await request(app)
+      .get('/api/tickets/stats')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.stats).toEqual([{ status: 'OPEN', count: 1 }]);
+  });
+
+  it('MANAGER stats include only their department tickets', async () => {
+    const token = await login('manager@test.com', 'Manager123');
+    const res = await request(app)
+      .get('/api/tickets/stats')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.stats).toEqual([{ status: 'OPEN', count: 1 }]);
+  });
+
+  it('ADMIN stats include all tickets', async () => {
+    const token = await login('admin@test.com', 'Admin123');
+    const res = await request(app)
+      .get('/api/tickets/stats')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.stats).toEqual([{ status: 'OPEN', count: 2 }]);
   });
 });
 

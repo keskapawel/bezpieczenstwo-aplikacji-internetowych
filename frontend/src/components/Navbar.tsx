@@ -54,6 +54,9 @@ export function Navbar(): JSX.Element {
         <Link to="/tickets" className="text-gray-300 hover:text-white transition-colors text-sm">
           Tickets
         </Link>
+        <Link to="/settings/2fa" className="text-gray-300 hover:text-white transition-colors text-sm">
+          2FA
+        </Link>
         {user?.role === UserRole.ADMIN && (
           <Link to="/admin" className="text-gray-300 hover:text-white transition-colors text-sm">
             Admin

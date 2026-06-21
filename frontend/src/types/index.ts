@@ -40,6 +40,7 @@ export interface User {
   department: string;
   created_at: string;
   is_active: number;
+  two_factor_enabled: number;
 }
 
 export interface Ticket {
@@ -76,6 +77,20 @@ export interface LoginResponse {
   accessToken: string;
   user: User;
   csrfToken: string;
+}
+
+export interface TwoFactorRequiredResponse {
+  twoFactorRequired: true;
+  pendingToken: string;
+  expiresInSeconds: number;
+}
+
+export type LoginResult = LoginResponse | TwoFactorRequiredResponse;
+
+export interface TwoFactorSetupResponse {
+  otpauthUrl: string;
+  qrCodeDataUrl: string;
+  manualEntryKey: string;
 }
 
 export interface TicketComment {

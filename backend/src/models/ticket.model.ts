@@ -29,6 +29,11 @@ export interface PaginatedTickets {
   totalPages: number;
 }
 
+export interface TicketStatsScope {
+  createdBy?: number;
+  department?: string;
+}
+
 function buildFilterClauses(filters: TicketFilters, values: unknown[]): string {
   const clauses: string[] = [];
   if (filters.status) { clauses.push('status = ?'); values.push(filters.status); }
@@ -129,8 +134,14 @@ export function deleteTicket(id: number): void {
   db.prepare('DELETE FROM tickets WHERE id = ?').run(id);
 }
 
-export function getTicketStats(): { status: string; count: number }[] {
+export function getTicketStats(scope: TicketStatsScope = {}): { status: string; count: number }[] {
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  if (scope.createdBy !== undefined) { clauses.push('created_by = ?'); values.push(scope.createdBy); }
+  if (scope.department !== undefined) { clauses.push('department = ?'); values.push(scope.department); }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
   return db
-    .prepare('SELECT status, COUNT(*) as count FROM tickets GROUP BY status')
-    .all() as { status: string; count: number }[];
+    .prepare(`SELECT status, COUNT(*) as count FROM tickets ${where} GROUP BY status`)
+    .all(...values) as { status: string; count: number }[];
 }

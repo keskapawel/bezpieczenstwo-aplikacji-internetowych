@@ -64,6 +64,18 @@ describe('Comments permission matrix', () => {
         .send({ content: 'admin edited' });
       expect(res.status).toBe(200);
     });
+
+    it('MANAGER cannot edit a comment from another department', async () => {
+      const adminToken = await login('admin@test.com', 'Admin123');
+      const commentId = await createComment(adminToken, 2, 'HR comment');
+
+      const managerToken = await login('manager@test.com', 'Manager123');
+      const res = await request(app)
+        .patch(`/api/tickets/2/comments/${commentId}`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ content: 'should fail' });
+      expect(res.status).toBe(403);
+    });
   });
 
   describe('DELETE /api/tickets/:ticketId/comments/:commentId', () => {
@@ -111,6 +123,17 @@ describe('Comments permission matrix', () => {
         .delete(`/api/tickets/1/comments/${commentId}`)
         .set('Authorization', `Bearer ${managerToken}`);
       expect(res.status).toBe(200);
+    });
+
+    it('MANAGER cannot delete a comment from another department', async () => {
+      const adminToken = await login('admin@test.com', 'Admin123');
+      const commentId = await createComment(adminToken, 2, 'HR comment');
+
+      const managerToken = await login('manager@test.com', 'Manager123');
+      const res = await request(app)
+        .delete(`/api/tickets/2/comments/${commentId}`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      expect(res.status).toBe(403);
     });
 
     it('ADMIN can delete any comment (200)', async () => {

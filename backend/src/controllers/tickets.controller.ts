@@ -15,6 +15,12 @@ import {
 import { UserRole, TicketStatus, TicketPriority, SecurityAction } from '../enums';
 import db from '../database';
 
+function hasTicketAccess(user: NonNullable<Request['user']>, ticket: Ticket): boolean {
+  if (user.role === UserRole.EMPLOYEE) return ticket.created_by === user.userId;
+  if (user.role === UserRole.MANAGER) return ticket.department === user.department;
+  return true;
+}
+
 function logEvent(userId: number | null, action: string, req: Request, success: boolean): void {
   const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
   const userAgent = req.headers['user-agent'] ?? 'unknown';
@@ -65,7 +71,7 @@ export function getTicketByIdHandler(req: Request, res: Response): void {
 
   if (!ticket) { res.status(404).json({ success: false, error: 'Ticket not found' }); return; }
 
-  if (req.user.role === UserRole.EMPLOYEE && ticket.created_by !== req.user.userId) {
+  if (!hasTicketAccess(req.user, ticket)) {
     res.status(403).json({ success: false, error: 'Access denied' });
     return;
   }
@@ -126,7 +132,7 @@ export function updateTicketHandler(req: Request, res: Response): void {
   const updates: Partial<Pick<Ticket, 'title' | 'description' | 'status' | 'assigned_to'>> = {};
 
   if (req.user.role === UserRole.EMPLOYEE) {
-    if (ticket.created_by !== req.user.userId) {
+    if (!hasTicketAccess(req.user, ticket)) {
       res.status(403).json({ success: false, error: 'Access denied' }); return;
     }
     if (ticket.status !== TicketStatus.OPEN) {
@@ -135,6 +141,9 @@ export function updateTicketHandler(req: Request, res: Response): void {
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
   } else {
+    if (!hasTicketAccess(req.user, ticket)) {
+      res.status(403).json({ success: false, error: 'Access denied' }); return;
+    }
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (status !== undefined) updates.status = status as TicketStatus;
@@ -159,6 +168,13 @@ export function deleteTicketHandler(req: Request, res: Response): void {
 
 export function getTicketStatsHandler(req: Request, res: Response): void {
   if (!req.user) { res.status(401).json({ success: false, error: 'Not authenticated' }); return; }
-  const stats = getTicketStats();
+  let stats;
+  if (req.user.role === UserRole.EMPLOYEE) {
+    stats = getTicketStats({ createdBy: req.user.userId });
+  } else if (req.user.role === UserRole.MANAGER) {
+    stats = getTicketStats({ department: req.user.department });
+  } else {
+    stats = getTicketStats();
+  }
   res.status(200).json({ success: true, data: { stats } });
 }

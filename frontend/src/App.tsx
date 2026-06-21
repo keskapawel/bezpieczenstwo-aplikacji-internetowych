@@ -7,6 +7,7 @@ import { TicketList } from './pages/TicketList';
 import { TicketDetail } from './pages/TicketDetail';
 import { NewTicket } from './pages/NewTicket';
 import { AdminPanel } from './pages/AdminPanel';
+import { TwoFactorSettings } from './pages/TwoFactorSettings';
 import { Unauthorized } from './pages/Unauthorized';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Cooldown from './pages/Cooldown';
@@ -62,6 +63,14 @@ function AppRoutes(): JSX.Element {
           element={
             <ProtectedRoute requiredRole={UserRole.ADMIN}>
               <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings/2fa"
+          element={
+            <ProtectedRoute>
+              <TwoFactorSettings />
             </ProtectedRoute>
           }
         />

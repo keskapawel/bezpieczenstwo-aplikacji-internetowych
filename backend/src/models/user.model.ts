@@ -10,12 +10,14 @@ export interface User {
   department: string;
   created_at: string;
   is_active: number;
+  two_factor_secret: string | null;
+  two_factor_enabled: number;
 }
 
-export type SafeUser = Omit<User, 'password_hash'>;
+export type SafeUser = Omit<User, 'password_hash' | 'two_factor_secret'>;
 
 export function sanitizeUser(user: User): SafeUser {
-  const { password_hash: _ph, ...safe } = user;
+  const { password_hash: _ph, two_factor_secret: _tfs, ...safe } = user;
   return safe;
 }
 
@@ -29,7 +31,7 @@ export function findUserById(id: number): User | undefined {
 
 export function getAllUsers(): SafeUser[] {
   return db
-    .prepare('SELECT id, email, name, role, department, created_at, is_active FROM users ORDER BY created_at DESC')
+    .prepare('SELECT id, email, name, role, department, created_at, is_active, two_factor_enabled FROM users ORDER BY created_at DESC')
     .all() as SafeUser[];
 }
 

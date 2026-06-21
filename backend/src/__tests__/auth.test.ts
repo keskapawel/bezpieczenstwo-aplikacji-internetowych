@@ -1,4 +1,5 @@
 import request from 'supertest';
+import speakeasy from 'speakeasy';
 import app from '../app';
 import { seedTestDb } from './helpers/db';
 
@@ -131,5 +132,91 @@ describe('POST /api/auth/logout', () => {
       .set('Cookie', `csrfToken=${csrf}`)
       .set('X-CSRF-Token', csrf);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('TOTP 2FA flow', () => {
+  beforeEach(async () => {
+    await seedTestDb();
+  });
+
+  async function enableTwoFactor(email = 'employee2@test.com', password = 'Employee456'): Promise<string> {
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+    const accessToken = loginRes.body.data.accessToken as string;
+
+    const setupRes = await request(app)
+      .post('/api/auth/2fa/setup')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(setupRes.status).toBe(200);
+    expect(setupRes.body.data.qrCodeDataUrl).toContain('data:image/png;base64,');
+    expect(setupRes.body.data.otpauthUrl).toContain('otpauth://totp/');
+
+    const secret = setupRes.body.data.manualEntryKey as string;
+    const code = speakeasy.totp({ secret, encoding: 'base32', step: 30 });
+
+    const enableRes = await request(app)
+      .post('/api/auth/2fa/enable')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code });
+    expect(enableRes.status).toBe(200);
+    expect(enableRes.body.data.user.two_factor_enabled).toBe(1);
+    expect(enableRes.body.data.user.two_factor_secret).toBeUndefined();
+
+    return secret;
+  }
+
+  it('sets up and enables 2FA with a valid TOTP code', async () => {
+    await enableTwoFactor();
+  });
+
+  it('requires 2FA after a valid password and does not issue tokens immediately', async () => {
+    await enableTwoFactor();
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'employee2@test.com', password: 'Employee456' });
+
+    const cookie = res.headers['set-cookie'] as string[] | string | undefined;
+    const cookieStr = Array.isArray(cookie) ? cookie.join('; ') : (cookie ?? '');
+    expect(res.status).toBe(202);
+    expect(res.body.data.twoFactorRequired).toBe(true);
+    expect(res.body.data.pendingToken).toBeDefined();
+    expect(res.body.data.accessToken).toBeUndefined();
+    expect(cookieStr).not.toContain('refreshToken=');
+  });
+
+  it('rejects an incorrect 2FA login code', async () => {
+    const secret = await enableTwoFactor();
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'employee2@test.com', password: 'Employee456' });
+    const invalidCode = speakeasy.totp({ secret, encoding: 'base32', step: 30 }) === '000000' ? '000001' : '000000';
+
+    const res = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ pendingToken: loginRes.body.data.pendingToken, code: invalidCode });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('issues tokens after a correct 2FA login code', async () => {
+    const secret = await enableTwoFactor();
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'employee2@test.com', password: 'Employee456' });
+    const code = speakeasy.totp({ secret, encoding: 'base32', step: 30 });
+
+    const res = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ pendingToken: loginRes.body.data.pendingToken, code });
+    const cookie = res.headers['set-cookie'] as string[] | string | undefined;
+    const cookieStr = Array.isArray(cookie) ? cookie.join('; ') : (cookie ?? '');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toBeDefined();
+    expect(res.body.data.user.two_factor_secret).toBeUndefined();
+    expect(cookieStr).toContain('refreshToken=');
   });
 });

@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { validationResult } from 'express-validator';
+import speakeasy from 'speakeasy';
+import QRCode from 'qrcode';
 import { findUserByEmail, findUserById, sanitizeUser } from '../models/user.model';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.utils';
 import { generateCaptcha, validateCaptcha } from '../utils/captcha.utils';
@@ -26,6 +28,8 @@ const CSRF_COOKIE_OPTIONS = {
 const LOCK_THRESHOLD = 5;       // lock after this many failures
 const CAPTCHA_THRESHOLD = 3;    // require captcha after this many failures
 const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const TWO_FACTOR_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TWO_FACTOR_ISSUER = 'SecureDesk';
 
 interface StoredToken {
   id: number;
@@ -37,6 +41,12 @@ interface StoredToken {
 interface LoginAttemptRow {
   attempts: number;
   locked_until: string | null;
+}
+
+interface TwoFactorChallengeRow {
+  id: number;
+  user_id: number;
+  expires_at: string;
 }
 
 function logSecurityEvent(userId: number | null, action: string, req: Request, success: boolean): void {
@@ -73,6 +83,62 @@ function incrementAttempts(email: string): number {
 
 function clearAttempts(email: string): void {
   db.prepare('DELETE FROM login_attempts WHERE email = ?').run(email);
+}
+
+function hashChallengeToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+async function issueAuthSession(user: NonNullable<ReturnType<typeof findUserById>>, req: Request, res: Response): Promise<void> {
+  const tokenPayload = {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    department: user.department,
+  };
+
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+
+  const tokenHash = await bcrypt.hash(refreshToken, 10);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare(
+    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
+  ).run(user.id, tokenHash, expiresAt);
+
+  logSecurityEvent(user.id, SecurityAction.LOGIN_SUCCESS, req, true);
+
+  const csrfToken = randomUUID();
+  res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
+  res.cookie('csrfToken', csrfToken, CSRF_COOKIE_OPTIONS);
+  res.status(200).json({ success: true, data: { accessToken, user: sanitizeUser(user), csrfToken } });
+}
+
+function createTwoFactorChallenge(userId: number): string {
+  const pendingToken = randomUUID();
+  const expiresAt = new Date(Date.now() + TWO_FACTOR_CHALLENGE_TTL_MS).toISOString();
+
+  db.prepare('DELETE FROM two_factor_challenges WHERE user_id = ? OR expires_at <= ?')
+    .run(userId, new Date().toISOString());
+  db.prepare(
+    'INSERT INTO two_factor_challenges (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
+  ).run(userId, hashChallengeToken(pendingToken), expiresAt);
+
+  return pendingToken;
+}
+
+function isValidTotpFormat(code: string | undefined): code is string {
+  return typeof code === 'string' && /^\d{6}$/.test(code.trim());
+}
+
+function verifyTotpCode(code: string, secret: string): boolean {
+  return speakeasy.totp.verify({
+    secret,
+    token: code.trim(),
+    encoding: 'base32',
+    step: 30,
+    window: 1,
+  });
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
@@ -163,28 +229,167 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   clearAttempts(email);
 
-  const tokenPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-    department: user.department,
-  };
+  if (user.two_factor_enabled === 1 && user.two_factor_secret) {
+    const pendingToken = createTwoFactorChallenge(user.id);
+    res.status(202).json({
+      success: true,
+      data: {
+        twoFactorRequired: true,
+        pendingToken,
+        expiresInSeconds: TWO_FACTOR_CHALLENGE_TTL_MS / 1000,
+      },
+    });
+    return;
+  }
 
-  const accessToken = generateAccessToken(tokenPayload);
-  const refreshToken = generateRefreshToken(tokenPayload);
+  await issueAuthSession(user, req, res);
+}
 
-  const tokenHash = await bcrypt.hash(refreshToken, 10);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  db.prepare(
-    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
-  ).run(user.id, tokenHash, expiresAt);
+export async function verifyTwoFactorLogin(req: Request, res: Response): Promise<void> {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(422).json({ success: false, error: 'Validation failed', data: errors.array() });
+    return;
+  }
 
-  logSecurityEvent(user.id, SecurityAction.LOGIN_SUCCESS, req, true);
+  const { pendingToken, code } = req.body as { pendingToken?: string; code?: string };
+  if (!pendingToken || !isValidTotpFormat(code)) {
+    res.status(422).json({ success: false, error: 'Pending token and a 6-digit code are required' });
+    return;
+  }
 
-  const csrfToken = randomUUID();
-  res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
-  res.cookie('csrfToken', csrfToken, CSRF_COOKIE_OPTIONS);
-  res.status(200).json({ success: true, data: { accessToken, user: sanitizeUser(user), csrfToken } });
+  const challenge = db.prepare(
+    'SELECT id, user_id, expires_at FROM two_factor_challenges WHERE token_hash = ?'
+  ).get(hashChallengeToken(pendingToken)) as TwoFactorChallengeRow | undefined;
+
+  if (!challenge || new Date(challenge.expires_at) <= new Date()) {
+    if (challenge) {
+      db.prepare('DELETE FROM two_factor_challenges WHERE id = ?').run(challenge.id);
+    }
+    res.status(401).json({ success: false, error: '2FA challenge expired or invalid' });
+    return;
+  }
+
+  const user = findUserById(challenge.user_id);
+  if (!user || user.is_active === 0 || user.two_factor_enabled !== 1 || !user.two_factor_secret) {
+    db.prepare('DELETE FROM two_factor_challenges WHERE id = ?').run(challenge.id);
+    res.status(401).json({ success: false, error: '2FA challenge expired or invalid' });
+    return;
+  }
+
+  if (!verifyTotpCode(code, user.two_factor_secret)) {
+    logSecurityEvent(user.id, SecurityAction.LOGIN_FAILED, req, false);
+    res.status(401).json({ success: false, error: 'Invalid authenticator code' });
+    return;
+  }
+
+  db.prepare('DELETE FROM two_factor_challenges WHERE id = ?').run(challenge.id);
+  await issueAuthSession(user, req, res);
+}
+
+export async function startTwoFactorSetup(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.userId;
+  if (!userId) {
+    res.status(401).json({ success: false, error: 'Access token required' });
+    return;
+  }
+
+  const user = findUserById(userId);
+  if (!user) {
+    res.status(404).json({ success: false, error: 'User not found' });
+    return;
+  }
+  if (user.two_factor_enabled === 1) {
+    res.status(409).json({ success: false, error: '2FA is already enabled' });
+    return;
+  }
+
+  const generatedSecret = speakeasy.generateSecret({
+    name: `${TWO_FACTOR_ISSUER}:${user.email}`,
+    issuer: TWO_FACTOR_ISSUER,
+    length: 20,
+  });
+  const secret = generatedSecret.base32;
+  const otpauthUrl = generatedSecret.otpauth_url;
+  if (!otpauthUrl) {
+    res.status(500).json({ success: false, error: 'Could not create 2FA setup URI' });
+    return;
+  }
+  const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+
+  db.prepare('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 0 WHERE id = ?')
+    .run(secret, user.id);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      otpauthUrl,
+      qrCodeDataUrl,
+      manualEntryKey: secret,
+    },
+  });
+}
+
+export function enableTwoFactor(req: Request, res: Response): void {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(422).json({ success: false, error: 'Validation failed', data: errors.array() });
+    return;
+  }
+
+  const userId = req.user?.userId;
+  const { code } = req.body as { code?: string };
+  if (!userId || !isValidTotpFormat(code)) {
+    res.status(422).json({ success: false, error: 'A 6-digit code is required' });
+    return;
+  }
+
+  const user = findUserById(userId);
+  if (!user || !user.two_factor_secret) {
+    res.status(400).json({ success: false, error: 'Start 2FA setup before enabling it' });
+    return;
+  }
+
+  if (!verifyTotpCode(code, user.two_factor_secret)) {
+    res.status(401).json({ success: false, error: 'Invalid authenticator code' });
+    return;
+  }
+
+  db.prepare('UPDATE users SET two_factor_enabled = 1 WHERE id = ?').run(user.id);
+  const updatedUser = findUserById(user.id);
+  res.status(200).json({ success: true, data: { user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user) } });
+}
+
+export function disableTwoFactor(req: Request, res: Response): void {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(422).json({ success: false, error: 'Validation failed', data: errors.array() });
+    return;
+  }
+
+  const userId = req.user?.userId;
+  const { code } = req.body as { code?: string };
+  if (!userId) {
+    res.status(401).json({ success: false, error: 'Access token required' });
+    return;
+  }
+
+  const user = findUserById(userId);
+  if (!user) {
+    res.status(404).json({ success: false, error: 'User not found' });
+    return;
+  }
+
+  if (user.two_factor_enabled === 1) {
+    if (!isValidTotpFormat(code) || !user.two_factor_secret || !verifyTotpCode(code, user.two_factor_secret)) {
+      res.status(401).json({ success: false, error: 'Invalid authenticator code' });
+      return;
+    }
+  }
+
+  db.prepare('UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 WHERE id = ?').run(user.id);
+  const updatedUser = findUserById(user.id);
+  res.status(200).json({ success: true, data: { user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user) } });
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {

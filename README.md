@@ -44,22 +44,26 @@ Otwórz http://localhost:5173 i zaloguj się jednym z kont testowych.
 
 ## Endpointy API
 
-| Metoda | Ścieżka                       | Wymagana rola                          | Opis                                                    |
-| ------ | ----------------------------- | -------------------------------------- | ------------------------------------------------------- |
-| POST   | /api/auth/login               | —                                      | Logowanie, zwraca access token + ustawia refresh cookie |
-| POST   | /api/auth/refresh             | — (cookie)                             | Odświeża access token przez httpOnly cookie             |
-| POST   | /api/auth/logout              | —                                      | Wylogowanie, usuwa refresh token                        |
-| GET    | /api/auth/admin/locked-users  | ADMIN_SECRET (query)                   | Lista zablokowanych kont                                |
-| POST   | /api/auth/admin/reset-lockout | ADMIN_SECRET (body)                    | Reset blokady dla emaila                                |
-| GET    | /api/tickets                  | EMPLOYEE/MANAGER/ADMIN                 | Lista ticketów (filtrowana wg roli)                     |
-| POST   | /api/tickets                  | EMPLOYEE/MANAGER/ADMIN                 | Utwórz ticket                                           |
-| GET    | /api/tickets/stats            | EMPLOYEE/MANAGER/ADMIN                 | Statystyki wg statusu                                   |
-| GET    | /api/tickets/:id              | właściciel lub MANAGER/ADMIN           | Szczegóły ticketu                                       |
-| PATCH  | /api/tickets/:id              | właściciel (treść) / MANAGER+ (status) | Edytuj ticket                                           |
-| DELETE | /api/tickets/:id              | ADMIN                                  | Usuń ticket                                             |
-| GET    | /api/users                    | ADMIN                                  | Lista użytkowników                                      |
-| PATCH  | /api/users/:id/role           | ADMIN                                  | Zmień rolę użytkownika                                  |
-| GET    | /api/admin/logs               | ADMIN                                  | Logi bezpieczeństwa                                     |
+| Metoda | Ścieżka                       | Wymagana rola                          | Opis                                                        |
+| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------------------------- |
+| POST   | /api/auth/login               | —                                      | Logowanie lub rozpoczęcie drugiego kroku 2FA                |
+| POST   | /api/auth/login/2fa           | pending 2FA token                      | Weryfikuje kod TOTP i kończy logowanie                      |
+| POST   | /api/auth/refresh             | — (cookie)                             | Odświeża access token przez httpOnly cookie                 |
+| POST   | /api/auth/logout              | —                                      | Wylogowanie, usuwa refresh token                            |
+| POST   | /api/auth/2fa/setup           | EMPLOYEE/MANAGER/ADMIN                 | Generuje sekret i QR do konfiguracji Authenticatora         |
+| POST   | /api/auth/2fa/enable          | EMPLOYEE/MANAGER/ADMIN                 | Włącza 2FA po poprawnym kodzie TOTP                         |
+| POST   | /api/auth/2fa/disable         | EMPLOYEE/MANAGER/ADMIN                 | Wyłącza 2FA po potwierdzeniu kodem TOTP                     |
+| GET    | /api/auth/admin/locked-users  | ADMIN_SECRET (query)                   | Lista zablokowanych kont                                    |
+| POST   | /api/auth/admin/reset-lockout | ADMIN_SECRET (body)                    | Reset blokady dla emaila                                    |
+| GET    | /api/tickets                  | EMPLOYEE/MANAGER/ADMIN                 | Lista ticketów (filtrowana wg roli)                         |
+| POST   | /api/tickets                  | EMPLOYEE/MANAGER/ADMIN                 | Utwórz ticket                                               |
+| GET    | /api/tickets/stats            | EMPLOYEE/MANAGER/ADMIN                 | Statystyki wg statusu (filtrowane wg roli)                  |
+| GET    | /api/tickets/:id              | właściciel / MANAGER działu / ADMIN    | Szczegóły ticketu                                           |
+| PATCH  | /api/tickets/:id              | właściciel (treść) / MANAGER działu+   | Edytuj ticket                                               |
+| DELETE | /api/tickets/:id              | ADMIN                                  | Usuń ticket                                                 |
+| GET    | /api/users                    | ADMIN                                  | Lista użytkowników                                          |
+| PATCH  | /api/users/:id/role           | ADMIN                                  | Zmień rolę użytkownika                                      |
+| GET    | /api/admin/logs               | ADMIN                                  | Logi bezpieczeństwa                                         |
 
 ---
 
@@ -156,6 +160,29 @@ curl -X POST http://localhost:3001/api/auth/admin/reset-lockout \
 ```
 
 > **Bezpieczeństwo:** Klucz `ADMIN_SECRET` powinien być silny i przechowywany w zmiennych środowiskowych. W produkcji endpoint powinien być dostępny tylko z sieci wewnętrznej (IP whitelist/VPN), nie z publicznego internetu.
+
+### 9. Uwierzytelnianie dwuskładnikowe 2FA (TOTP)
+
+**Co:** Aplikacja obsługuje 2FA kompatybilne z Microsoft Authenticator i Google Authenticator. Użytkownik może włączyć drugi składnik w panelu `/settings/2fa`, skanując kod QR wygenerowany przez backend.
+
+**Dlaczego:** Hasło jest tylko jednym składnikiem uwierzytelniania. Jeśli zostanie wykradzione, odgadnięte albo użyte ponownie z innego serwisu, atakujący nadal nie zaloguje się bez aktualnego kodu z aplikacji Authenticator na telefonie użytkownika.
+
+**Jak:** Mechanizm wykorzystuje standard **TOTP** (Time-based One-Time Password). Podczas konfiguracji backend generuje losowy sekret 2FA i link `otpauth://`, który frontend pokazuje jako kod QR. Microsoft Authenticator zapisuje sekret lokalnie w telefonie. Od tego momentu telefon i serwer potrafią niezależnie wyliczyć ten sam 6-cyfrowy kod na podstawie sekretu i aktualnego czasu. Kod zmienia się zwykle co 30 sekund.
+
+**Flow logowania z 2FA:**
+
+1. Użytkownik wpisuje email i hasło.
+2. Backend sprawdza hasło oraz istniejące zabezpieczenia logowania, takie jak rate limiting, CAPTCHA i blokada konta.
+3. Jeśli konto ma włączone 2FA, backend **nie wydaje jeszcze** access tokena ani refresh tokena.
+4. Backend zwraca `202 Accepted` z informacją `twoFactorRequired: true` oraz krótkotrwałym tokenem wyzwania logowania.
+5. Frontend pokazuje pole na 6-cyfrowy kod z Microsoft Authenticator.
+6. Użytkownik przepisuje aktualny kod z aplikacji.
+7. Backend weryfikuje kod TOTP na podstawie sekretu użytkownika.
+8. Dopiero po poprawnym kodzie backend wystawia access token JWT oraz refresh token w `httpOnly cookie`.
+
+**Bezpieczeństwo:** Pending token używany między pierwszym a drugim krokiem logowania nie jest tokenem sesji i nie daje dostępu do API. Jest przechowywany po stronie serwera jako hash SHA-256, wygasa po 5 minutach i jest usuwany po udanym użyciu.
+
+**Ograniczenie wersji demonstracyjnej:** Sekret TOTP jest przechowywany w bazie SQLite w formie jawnej. W środowisku produkcyjnym powinien być dodatkowo szyfrowany albo przechowywany w bezpiecznym systemie zarządzania sekretami.
 
 ---
 

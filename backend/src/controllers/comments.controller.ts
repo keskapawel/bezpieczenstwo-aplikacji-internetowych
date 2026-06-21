@@ -28,6 +28,10 @@ function hasTicketAccess(req: Request, tId: number): boolean {
   return true;
 }
 
+function commentBelongsToRoute(req: Request, commentTicketId: number): boolean {
+  return ticketId(req) === commentTicketId;
+}
+
 export function getComments(req: Request, res: Response): void {
   if (!req.user) { res.status(401).json({ success: false, error: 'Not authenticated' }); return; }
 
@@ -70,6 +74,10 @@ export function editComment(req: Request, res: Response): void {
   const comment = getCommentById(cId);
   if (!comment) { res.status(404).json({ success: false, error: 'Comment not found' }); return; }
 
+  if (!commentBelongsToRoute(req, comment.ticket_id) || !hasTicketAccess(req, comment.ticket_id)) {
+    res.status(403).json({ success: false, error: 'Access denied' }); return;
+  }
+
   // Only owner or ADMIN can edit
   const isOwner = comment.user_id === req.user.userId;
   const isAdmin = req.user.role === UserRole.ADMIN;
@@ -88,6 +96,10 @@ export function removeComment(req: Request, res: Response): void {
   const cId = commentId(req);
   const comment = getCommentById(cId);
   if (!comment) { res.status(404).json({ success: false, error: 'Comment not found' }); return; }
+
+  if (!commentBelongsToRoute(req, comment.ticket_id) || !hasTicketAccess(req, comment.ticket_id)) {
+    res.status(403).json({ success: false, error: 'Access denied' }); return;
+  }
 
   // Owner, MANAGER, or ADMIN can delete
   const isOwner = comment.user_id === req.user.userId;

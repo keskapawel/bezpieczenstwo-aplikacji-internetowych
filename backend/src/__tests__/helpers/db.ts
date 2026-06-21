@@ -22,7 +22,9 @@ export async function seedTestDb(): Promise<void> {
     DELETE FROM ticket_comments;
     DELETE FROM tickets;
     DELETE FROM refresh_tokens;
+    DELETE FROM two_factor_challenges;
     DELETE FROM security_logs;
+    DELETE FROM login_attempts;
     DELETE FROM users;
   `);
 

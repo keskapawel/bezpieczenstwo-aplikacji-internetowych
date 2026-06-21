@@ -12,6 +12,7 @@ interface AuthState {
   logout: () => void;
   setAccessToken: (token: string) => void;
   setCsrfToken: (token: string) => void;
+  setUser: (user: User) => void;
   setInitializing: (value: boolean) => void;
   setSecondsLeft: (seconds: number | null) => void;
 }
@@ -31,6 +32,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ accessToken: token }),
   setCsrfToken: (token: string) =>
     set({ csrfToken: token }),
+  setUser: (user: User) =>
+    set({ user }),
   setInitializing: (value: boolean) =>
     set({ isInitializing: value }),
   setSecondsLeft: (seconds: number | null) =>
